@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'tank_service.dart';
+import 'login_screen.dart';
 import 'setup_screen.dart';
 import 'dashboard_screen.dart';
 
@@ -36,8 +37,10 @@ class TankMonitorApp extends StatelessWidget {
   }
 }
 
-/// Loads the saved URL on first frame. If present, connects and goes to Dashboard.
-/// Otherwise shows the Setup screen so the user can enter a URL.
+/// Loads the saved token and URLs on first frame.
+/// If no token → LoginScreen.
+/// If token present and URLs saved → DashboardScreen.
+/// If token present but no URLs → SetupScreen.
 class _Startup extends StatefulWidget {
   const _Startup();
 
@@ -46,7 +49,8 @@ class _Startup extends StatefulWidget {
 }
 
 class _StartupState extends State<_Startup> {
-  bool _ready = false;
+  bool _ready       = false;
+  bool _loggedIn    = false;
   bool _hasSavedUrl = false;
 
   @override
@@ -57,12 +61,17 @@ class _StartupState extends State<_Startup> {
 
   Future<void> _init() async {
     final svc = context.read<TankService>();
+    await svc.loadToken();
+    if (svc.authToken == null) {
+      setState(() { _loggedIn = false; _ready = true; });
+      return;
+    }
     await svc.loadSavedUrls();
     if (svc.wifiUrl.isNotEmpty || svc.mobileUrl.isNotEmpty) {
-      await svc.connectAuto(); // auto-picks WiFi or mobile URL
-      setState(() { _hasSavedUrl = true; _ready = true; });
+      await svc.connectAuto();
+      setState(() { _loggedIn = true; _hasSavedUrl = true; _ready = true; });
     } else {
-      setState(() { _hasSavedUrl = false; _ready = true; });
+      setState(() { _loggedIn = true; _hasSavedUrl = false; _ready = true; });
     }
   }
 
@@ -76,6 +85,7 @@ class _StartupState extends State<_Startup> {
         ),
       );
     }
+    if (!_loggedIn) return const LoginScreen();
     return _hasSavedUrl ? const DashboardScreen() : const SetupScreen();
   }
 }

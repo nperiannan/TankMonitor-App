@@ -5,6 +5,7 @@ import 'models.dart';
 import 'tank_service.dart';
 import 'schedule_sheet.dart';
 import 'setup_screen.dart';
+import 'login_screen.dart';
 
 // ─── Colours (mirrors Ant Design dark theme) ────────────────────────────────
 const _bg      = Color(0xFF141414);
@@ -205,10 +206,31 @@ class _DashboardScreenState extends State<DashboardScreen>
     }
   }
 
+  void _logout() async {
+    final svc = context.read<TankService>();
+    await svc.logout();
+    if (mounted) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        (_) => false,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final svc = context.watch<TankService>();
     final s   = svc.status;
+
+    // Navigate to login if token was invalidated
+    if (svc.unauthorized) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const LoginScreen()),
+          (_) => false,
+        );
+      });
+    }
 
     return Scaffold(
       backgroundColor: _bg,
@@ -224,7 +246,7 @@ class _DashboardScreenState extends State<DashboardScreen>
               child: Text(_to12hr(s!.time), style: const TextStyle(color: _label, fontSize: 12)),
             )),
           Padding(
-            padding: const EdgeInsets.only(right: 8),
+            padding: const EdgeInsets.only(right: 4),
             child: Row(children: [
               Icon(Icons.circle, size: 8,
                 color: svc.connected ? _green : _red),
@@ -239,6 +261,11 @@ class _DashboardScreenState extends State<DashboardScreen>
             onPressed: () => Navigator.of(context).pushReplacement(
               MaterialPageRoute(builder: (_) => const SetupScreen()),
             ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.logout, color: _label, size: 20),
+            tooltip: 'Sign out',
+            onPressed: _logout,
           ),
         ],
       ),

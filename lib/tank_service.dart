@@ -10,11 +10,15 @@ import 'models.dart';
 const _kWifiUrl   = 'wifi_url';
 const _kMobileUrl = 'mobile_url';
 const _kServerKey = 'server_url'; // legacy fallback
+const _kAuthToken = 'auth_token';
 
 const defaultWifiUrl   = 'http://192.168.0.102:1880';
 const defaultMobileUrl = 'http://nperiannan-nas.freemyip.com:1880';
 
 class TankService extends ChangeNotifier {
+  // ── Auth ─────────────────────────────────────────────────────────────────
+  String? authToken;
+  bool unauthorized = false;
   // ── URL configuration ────────────────────────────────────────────────────
   String wifiUrl   = defaultWifiUrl;
   String mobileUrl = defaultMobileUrl;
@@ -56,6 +60,52 @@ class TankService extends ChangeNotifier {
     await prefs.setString(_kMobileUrl, mobileUrl);
   }
 
+  // ── Auth persistence ─────────────────────────────────────────────────────
+
+  Future<void> loadToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    authToken = prefs.getString(_kAuthToken);
+  }
+
+  Future<bool> login(String username, String password) async {
+    error = null;
+    try {
+      final url = await _pickUrl();
+      final res = await http.post(
+        Uri.parse('$url/api/login'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'username': username, 'password': password}),
+      ).timeout(const Duration(seconds: 10));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        authToken = data['token'] as String?;
+        if (authToken != null) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString(_kAuthToken, authToken!);
+          unauthorized = false;
+          notifyListeners();
+          return true;
+        }
+      }
+      error = res.statusCode == 401 ? 'Invalid username or password' : 'Login failed (${res.statusCode})';
+      notifyListeners();
+      return false;
+    } catch (e) {
+      error = 'Cannot reach server: ${e.toString()}';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<void> logout() async {
+    authToken = null;
+    unauthorized = true;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_kAuthToken);
+    disconnect();
+    notifyListeners();
+  }
+
   // ── Network detection ────────────────────────────────────────────────────
 
   Future<String> _pickUrl() async {
@@ -87,12 +137,18 @@ class TankService extends ChangeNotifier {
     _closeChannel();
     _activeUrl = url.trimRight().replaceAll(RegExp(r'/$'), '');
 
-    final wsUrl = _activeUrl
+    var wsUrl = _activeUrl
         .replaceFirst(RegExp(r'^http://'), 'ws://')
         .replaceFirst(RegExp(r'^https://'), 'wss://');
 
+    if (authToken != null) {
+      wsUrl = '$wsUrl/ws?token=${Uri.encodeComponent(authToken!)}';
+    } else {
+      wsUrl = '$wsUrl/ws';
+    }
+
     try {
-      _channel = WebSocketChannel.connect(Uri.parse('$wsUrl/ws'));
+      _channel = WebSocketChannel.connect(Uri.parse(wsUrl));
       _sub = _channel!.stream.listen(
         (data) {
           if (_disposed) return;
@@ -103,8 +159,18 @@ class TankService extends ChangeNotifier {
             notifyListeners();
           } catch (_) {}
         },
-        onError: (_) {
+        onError: (e) {
           if (_disposed) return;
+          // Detect 401 unauthorized from WS upgrade failure
+          final msg = e.toString().toLowerCase();
+          if (msg.contains('401') || msg.contains('unauthorized')) {
+            unauthorized = true;
+            authToken = null;
+            SharedPreferences.getInstance().then((p) => p.remove(_kAuthToken));
+            connected = false;
+            notifyListeners();
+            return;
+          }
           connected = false;
           notifyListeners();
           _scheduleReconnect();
@@ -171,11 +237,20 @@ class TankService extends ChangeNotifier {
 
   Future<void> sendControl(Map<String, dynamic> cmd) async {
     try {
+      final headers = <String, String>{'Content-Type': 'application/json'};
+      if (authToken != null) headers['Authorization'] = 'Bearer $authToken';
       final res = await http.post(
         Uri.parse('$_activeUrl/api/control'),
-        headers: {'Content-Type': 'application/json'},
+        headers: headers,
         body: jsonEncode(cmd),
       ).timeout(const Duration(seconds: 8));
+      if (res.statusCode == 401) {
+        unauthorized = true;
+        authToken = null;
+        SharedPreferences.getInstance().then((p) => p.remove(_kAuthToken));
+        notifyListeners();
+        return;
+      }
       if (res.statusCode != 200) {
         error = 'Control failed (${res.statusCode}): ${res.body}';
         notifyListeners();
