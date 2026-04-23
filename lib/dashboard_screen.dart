@@ -222,8 +222,8 @@ class _DashboardScreenState extends State<DashboardScreen>
     final svc = context.watch<TankService>();
     final s   = svc.status;
 
-    // Enabled schedules & next-upcoming index per motor
-    final enabledScheds = s?.schedules.where((sc) => sc.on).toList() ?? [];
+    // All schedules shown; next-upcoming index per motor for highlight
+    final enabledScheds = s?.schedules.toList() ?? [];
     final nextOHIdx = _nextScheduleIdx(
         enabledScheds.where((sc) => sc.m == 'OH').toList(), s?.time ?? '');
     final nextUGIdx = _nextScheduleIdx(
@@ -322,7 +322,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                       onTap: () => _confirmClear(context, svc),
                     ),
                   ]),
-                  child: s == null || enabledScheds.isEmpty
+                  child: s == null || s.schedules.isEmpty
                       ? const Padding(
                           padding: EdgeInsets.symmetric(vertical: 12),
                           child: Center(child: Text('No schedules configured',
