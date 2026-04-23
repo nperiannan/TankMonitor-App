@@ -191,6 +191,9 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   double? _downloadProgress; // null = idle, 0.0–1.0 = downloading
 
+  // OTA state
+  bool _otaBusy = false;
+
   @override
   void initState() {
     super.initState();
@@ -246,6 +249,50 @@ class _DashboardScreenState extends State<DashboardScreen>
         );
       }
     }
+  }
+
+  void _confirmFlash(BuildContext ctx, TankService svc) {
+    showDialog(context: ctx, builder: (_) => AlertDialog(
+      backgroundColor: _cardBg,
+      title: const Text('Flash firmware to ESP32?', style: TextStyle(color: Colors.white)),
+      content: const Text(
+        'The ESP32 will download and install the staged firmware from the server, then reboot.',
+        style: TextStyle(color: _label, fontSize: 13)),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+        TextButton(
+          onPressed: () async {
+            Navigator.pop(ctx);
+            setState(() => _otaBusy = true);
+            await svc.triggerOta();
+            if (mounted) setState(() => _otaBusy = false);
+          },
+          child: const Text('Flash', style: TextStyle(color: _blue)),
+        ),
+      ],
+    ));
+  }
+
+  void _confirmRollback(BuildContext ctx, TankService svc) {
+    showDialog(context: ctx, builder: (_) => AlertDialog(
+      backgroundColor: _cardBg,
+      title: const Text('Rollback firmware?', style: TextStyle(color: Colors.white)),
+      content: const Text(
+        'ESP32 will reboot into the previous OTA partition.',
+        style: TextStyle(color: _label, fontSize: 13)),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+        TextButton(
+          onPressed: () async {
+            Navigator.pop(ctx);
+            setState(() => _otaBusy = true);
+            await svc.triggerRollback();
+            if (mounted) setState(() => _otaBusy = false);
+          },
+          child: const Text('Rollback', style: TextStyle(color: _red)),
+        ),
+      ],
+    ));
   }
 
   void _logout() async {
@@ -422,6 +469,45 @@ class _DashboardScreenState extends State<DashboardScreen>
                         onTap: () => _confirmReboot(context, svc),
                       ),
                     ]),
+                  ),
+                ),
+                const SizedBox(height: 10),
+
+                // ── Firmware OTA ──
+                _SectionCard(
+                  title: 'FIRMWARE UPDATE (OTA)',
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(children: [
+                        Expanded(child: Text(
+                          'Current: ${s?.fw ?? '—'}',
+                          style: const TextStyle(color: _label, fontSize: 12),
+                        )),
+                      ]),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Upload a firmware.bin via the web app, then trigger flash here.',
+                        style: TextStyle(color: _label, fontSize: 11),
+                      ),
+                      const SizedBox(height: 10),
+                      Row(children: [
+                        Expanded(child: _ActionButton(
+                          label: _otaBusy ? 'Working…' : 'Flash Firmware',
+                          icon: Icons.bolt,
+                          enabled: s != null && !_otaBusy,
+                          onTap: () => _confirmFlash(context, svc),
+                        )),
+                        const SizedBox(width: 10),
+                        Expanded(child: _ActionButton(
+                          label: 'Rollback',
+                          icon: Icons.history,
+                          danger: true,
+                          enabled: s != null && !_otaBusy,
+                          onTap: () => _confirmRollback(context, svc),
+                        )),
+                      ]),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 10),
@@ -729,6 +815,17 @@ class _ScheduleRow extends StatelessWidget {
         const Text('Next', style: TextStyle(color: _green, fontSize: 11, fontWeight: FontWeight.w600)),
       ],
       const Spacer(),
+      IconButton(
+        icon: const Icon(Icons.edit_outlined, color: _blue, size: 18),
+        padding: EdgeInsets.zero, constraints: const BoxConstraints(),
+        tooltip: 'Edit',
+        onPressed: () => showModalBottomSheet(
+          context: context, isScrollControlled: true,
+          backgroundColor: _cardBg,
+          builder: (_) => ScheduleSheet(svc: svc, editSchedule: sch),
+        ),
+      ),
+      const SizedBox(width: 4),
       IconButton(
         icon: const Icon(Icons.delete_outline, color: _red, size: 18),
         padding: EdgeInsets.zero, constraints: const BoxConstraints(),

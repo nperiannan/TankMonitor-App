@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'models.dart';
 import 'tank_service.dart';
 
 const _cardBg = Color(0xFF1f1f1f);
@@ -9,23 +10,41 @@ const _cardBd = Color(0xFF303030);
 
 class ScheduleSheet extends StatefulWidget {
   final TankService svc;
-  const ScheduleSheet({super.key, required this.svc});
+  /// If non-null, the sheet is in edit mode for this schedule.
+  final Schedule? editSchedule;
+  const ScheduleSheet({super.key, required this.svc, this.editSchedule});
 
   @override
   State<ScheduleSheet> createState() => _ScheduleSheetState();
 }
 
 class _ScheduleSheetState extends State<ScheduleSheet> {
-  int    _motor    = 0;         // 0 = OH, 1 = UG
-  TimeOfDay _time  = TimeOfDay.now();
-  final _durCtrl   = TextEditingController(text: '30');
+  late int    _motor;
+  late TimeOfDay _time;
+  late final TextEditingController _durCtrl;
   bool _submitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final e = widget.editSchedule;
+    _motor = e != null ? (e.m == 'OH' ? 0 : 1) : 0;
+    if (e != null) {
+      final parts = e.t.split(':');
+      _time = TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
+    } else {
+      _time = TimeOfDay.now();
+    }
+    _durCtrl = TextEditingController(text: e != null ? '${e.d}' : '30');
+  }
 
   @override
   void dispose() {
     _durCtrl.dispose();
     super.dispose();
   }
+
+  bool get _isEdit => widget.editSchedule != null;
 
   Future<void> _pickTime() async {
     final picked = await showTimePicker(
@@ -51,6 +70,11 @@ class _ScheduleSheetState extends State<ScheduleSheet> {
     setState(() => _submitting = true);
     final hh = _time.hour.toString().padLeft(2, '0');
     final mm = _time.minute.toString().padLeft(2, '0');
+
+    if (_isEdit) {
+      // Delete old schedule then re-add with new values
+      await widget.svc.sendControl({'cmd': 'sched_remove', 'index': widget.editSchedule!.i});
+    }
     await widget.svc.sendControl({
       'cmd': 'sched_add',
       'motor': _motor,
@@ -77,8 +101,8 @@ class _ScheduleSheetState extends State<ScheduleSheet> {
               borderRadius: BorderRadius.circular(2)),
           )),
           const SizedBox(height: 16),
-          const Text('Add Schedule',
-            style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w700)),
+          Text(_isEdit ? 'Edit Schedule' : 'Add Schedule',
+            style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w700)),
           const SizedBox(height: 20),
 
           // Motor selector
@@ -153,7 +177,8 @@ class _ScheduleSheetState extends State<ScheduleSheet> {
               child: _submitting
                   ? const SizedBox(width: 20, height: 20,
                       child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                  : const Text('Add Schedule', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                  : Text(_isEdit ? 'Save Changes' : 'Add Schedule',
+                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
             ),
           ),
         ],

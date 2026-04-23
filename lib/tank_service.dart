@@ -15,7 +15,7 @@ const _kAuthToken = 'auth_token';
 const defaultWifiUrl   = 'http://192.168.0.102:1880';
 const defaultMobileUrl = 'http://nperiannan-nas.freemyip.com:1880';
 
-const mobileAppVersion = '1.2.0';
+const mobileAppVersion = '1.3.0';
 
 class TankService extends ChangeNotifier {
   // ── Auth ─────────────────────────────────────────────────────────────────
@@ -299,6 +299,28 @@ class TankService extends ChangeNotifier {
       return false;
     }
   }
+  Future<void> triggerOta() async {
+    try {
+      final headers = <String, String>{};
+      if (authToken != null) headers['Authorization'] = 'Bearer $authToken';
+      await http.post(
+        Uri.parse('$_activeUrl/api/ota/trigger'),
+        headers: headers,
+      ).timeout(const Duration(seconds: 10));
+    } catch (_) {}
+  }
+
+  Future<void> triggerRollback() async {
+    try {
+      final headers = <String, String>{};
+      if (authToken != null) headers['Authorization'] = 'Bearer $authToken';
+      await http.post(
+        Uri.parse('$_activeUrl/api/ota/rollback'),
+        headers: headers,
+      ).timeout(const Duration(seconds: 10));
+    } catch (_) {}
+  }
+
   Future<void> sendControl(Map<String, dynamic> cmd) async {
     try {
       final headers = <String, String>{'Content-Type': 'application/json'};
